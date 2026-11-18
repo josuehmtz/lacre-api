@@ -77,7 +77,23 @@ builder.Services.ConfigureApplicationCookie(o =>
     o.SlidingExpiration = true;
 });
 
-builder.Services.AddAuthentication()
+var authentication = builder.Services.AddAuthentication();
+
+// Inicio de sesión con Google (solo si hay credenciales: user-secrets en desarrollo, Secret Manager en producción).
+var google = builder.Configuration.GetSection("Authentication:Google");
+if (!string.IsNullOrWhiteSpace(google["ClientId"]) && !string.IsNullOrWhiteSpace(google["ClientSecret"]))
+{
+    authentication.AddGoogle(GoogleAuth.Scheme, o =>
+    {
+        o.ClientId = google["ClientId"]!.Trim();
+        o.ClientSecret = google["ClientSecret"]!.Trim();
+        // Bajo /api para que pase por el proxy de Netlify (y de Vite) y la cookie quede en el dominio del sitio.
+        o.CallbackPath = "/api/auth/signin-google";
+        o.SignInScheme = IdentityConstants.ExternalScheme;
+    });
+}
+
+authentication
     .AddCookie(StaffAuth.Scheme, o =>
     {
         o.Cookie.Name = "inv_staff";
@@ -105,6 +121,19 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// La API se usa detrás del proxy de Netlify (o de Vite): las URLs que genera (p. ej. el regreso de Google)
+// deben usar el dominio público del sitio, no el de Cloud Run.
+if (Uri.TryCreate(app.Configuration["App:PublicUrl"], UriKind.Absolute, out var publicUrl))
+{
+    app.Use((ctx, next) =>
+    {
+        ctx.Request.Scheme = publicUrl.Scheme;
+        ctx.Request.Host = HostString.FromUriComponent(publicUrl);
+        return next(ctx);
+    });
+}
+
 // Errores no controlados y 404/401 vacíos se devuelven como ProblemDetails (JSON estándar).
 app.UseExceptionHandler(new ExceptionHandlerOptions
 {
