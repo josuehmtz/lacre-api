@@ -1,0 +1,17 @@
+﻿# .NET
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+
+# Entorno y secretos (las llaves van en user-secrets / Secret Manager, nunca aquí)
+.env
+.env.*
+appsettings.*.local.json
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
