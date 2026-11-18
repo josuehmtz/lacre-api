@@ -3,6 +3,7 @@ using Invitations.Api.Data;
 using Invitations.Api.Domain;
 using Invitations.Api.Features.Auth;
 using Invitations.Api.Features.Billing;
+using Invitations.Api.Features.Common;
 using Invitations.Api.Features.Events;
 using Invitations.Api.Features.Invitations;
 using Invitations.Api.Features.Plans;
@@ -126,10 +127,11 @@ app.UseForwardedHeaders();
 // deben usar el dominio público del sitio, no el de Cloud Run.
 if (Uri.TryCreate(app.Configuration["App:PublicUrl"], UriKind.Absolute, out var publicUrl))
 {
+    var publicHost = PublicUrls.HostFor(publicUrl);
     app.Use((ctx, next) =>
     {
         ctx.Request.Scheme = publicUrl.Scheme;
-        ctx.Request.Host = HostString.FromUriComponent(publicUrl);
+        ctx.Request.Host = publicHost;
         return next(ctx);
     });
 }
