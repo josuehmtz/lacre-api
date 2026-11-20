@@ -3,7 +3,12 @@ namespace Invitations.Api.Domain;
 /// <summary>Plano del salón: tamaño y elementos fijos (pista, escenario...). Se guarda como jsonb en el evento.</summary>
 public record SeatingLayout(int Width, int Height, IReadOnlyList<LayoutElement> Elements)
 {
-    public static readonly SeatingLayout Default = new(1000, 700, []);
+    /// <summary>
+    /// Salón nuevo: ya trae la entrada en la pared de abajo (girada 180°, flecha hacia adentro)
+    /// para que todos lean el plano en el mismo sentido. El cliente la puede mover a otra pared.
+    /// </summary>
+    public static readonly SeatingLayout Default = new(1000, 700,
+        [new LayoutElement("entrada", "entrance", "Entrada", X: 500, Y: 680, Width: 120, Height: 40, Rotation: 180)]);
 }
 
 public record LayoutElement(string Id, string Kind, string Label, double X, double Y, double Width, double Height, double Rotation);
