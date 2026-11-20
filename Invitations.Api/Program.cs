@@ -6,6 +6,7 @@ using Invitations.Api.Features.Billing;
 using Invitations.Api.Features.Common;
 using Invitations.Api.Features.Events;
 using Invitations.Api.Features.Invitations;
+using Invitations.Api.Features.Photos;
 using Invitations.Api.Features.Plans;
 using Invitations.Api.Features.Public;
 using Invitations.Api.Features.Seating;
@@ -48,6 +49,11 @@ builder.Services.AddRateLimiter(o =>
 // Pagos (Stripe). Las llaves vienen de user-secrets o variables de entorno (Stripe__SecretKey, Stripe__WebhookSecret).
 builder.Services.Configure<StripeOptions>(builder.Configuration.GetSection("Stripe"));
 builder.Services.AddSingleton<IPaymentGateway, StripePaymentGateway>();
+
+// Fotos en Cloudflare R2 (R2__AccountId, R2__Bucket, R2__AccessKeyId, R2__SecretAccessKey, R2__PublicBaseUrl).
+// Sin configurar, la API sigue funcionando y la subida de fotos responde 503.
+builder.Services.Configure<R2Options>(builder.Configuration.GetSection("R2"));
+builder.Services.AddHttpClient<IPhotoStorage, R2PhotoStorage>(c => c.Timeout = TimeSpan.FromSeconds(15));
 
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseNpgsql(ConnectionStrings.Normalize(builder.Configuration.GetConnectionString("Default"))));
@@ -169,6 +175,7 @@ api.MapPlanEndpoints();
 api.MapEventEndpoints();
 api.MapInvitationEndpoints();
 api.MapTemplateEndpoints();
+api.MapPhotoEndpoints();
 api.MapPublicInvitationEndpoints();
 api.MapSeatingEndpoints();
 api.MapBillingEndpoints();

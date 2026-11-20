@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Invitations.Api.Data;
 using Invitations.Api.Domain;
+using Invitations.Api.Features.Photos;
 using Microsoft.EntityFrameworkCore;
 
 namespace Invitations.Api.Features.Public;
@@ -12,7 +13,8 @@ public static class PublicInvitationEndpoints
 
     public record PublicEventDto(
         string Title, EventType Type, DateTimeOffset StartsAt, string? VenueName, string? VenueAddress,
-        string? MapsUrl, DateTimeOffset? RsvpDeadline, string TemplateKey, JsonElement TemplateConfig);
+        string? MapsUrl, DateTimeOffset? RsvpDeadline, string TemplateKey, JsonElement TemplateConfig,
+        string? PhotoBaseUrl);
 
     public record PublicInvitationDto(
         string DisplayName, int Passes, RsvpStatus RsvpStatus, int ConfirmedPasses,
@@ -32,13 +34,14 @@ public static class PublicInvitationEndpoints
             // Limita intentos por IP para que no se puedan probar tokens a lo loco.
             .RequireRateLimiting(RateLimitPolicy);
 
-        group.MapGet("/", async (string token, AppDbContext db, TimeProvider clock) =>
+        group.MapGet("/", async (string token, AppDbContext db, TimeProvider clock, IPhotoStorage photos) =>
         {
             var inv = await FindAsync(db, token, tracking: false);
-            return inv is null ? Results.NotFound() : Results.Ok(ToDto(inv, clock.GetUtcNow()));
+            return inv is null ? Results.NotFound() : Results.Ok(ToDto(inv, clock.GetUtcNow(), photos.PublicBaseUrl));
         });
 
-        group.MapPost("/rsvp", async (string token, RsvpRequest req, AppDbContext db, TimeProvider clock) =>
+        group.MapPost("/rsvp", async (string token, RsvpRequest req, AppDbContext db, TimeProvider clock,
+            IPhotoStorage photos) =>
         {
             var inv = await FindAsync(db, token, tracking: true);
             if (inv is null) return Results.NotFound();
@@ -51,7 +54,7 @@ public static class PublicInvitationEndpoints
 
             RsvpRules.Apply(inv, req.Attending, req.ConfirmedPasses, req.GuestNames, req.Message, now);
             await db.SaveChangesAsync();
-            return Results.Ok(ToDto(inv, now));
+            return Results.Ok(ToDto(inv, now, photos.PublicBaseUrl));
         });
 
         return api;
@@ -65,10 +68,10 @@ public static class PublicInvitationEndpoints
         return await query.FirstOrDefaultAsync(i => i.Token == token);
     }
 
-    private static PublicInvitationDto ToDto(Invitation inv, DateTimeOffset now)
+    private static PublicInvitationDto ToDto(Invitation inv, DateTimeOffset now, string? photoBaseUrl)
     {
         var ev = inv.Event;
-        var template = Templates.TemplateEndpoints.ToDto(ev);
+        var template = Templates.TemplateEndpoints.ToDto(ev, photoBaseUrl);
         return new PublicInvitationDto(
             inv.DisplayName, inv.Passes, inv.RsvpStatus, inv.ConfirmedPasses,
             inv.Guests.OrderBy(g => g.Id).Select(g => g.Name).ToList(),
@@ -77,6 +80,6 @@ public static class PublicInvitationEndpoints
             IsPreview: ev.Status == EventStatus.Draft,
             new PublicEventDto(
                 ev.Title, ev.Type, ev.StartsAt, ev.VenueName, ev.VenueAddress, ev.MapsUrl,
-                ev.RsvpDeadline, template.TemplateKey, template.Config));
+                ev.RsvpDeadline, template.TemplateKey, template.Config, template.PhotoBaseUrl));
     }
 }

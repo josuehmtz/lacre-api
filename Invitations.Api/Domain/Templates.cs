@@ -29,6 +29,10 @@ public static class Templates
         return null;
     }
 
+    /// <summary>Igual que <see cref="Validate(string, JsonElement)"/> y además revisa que las fotos sean de este evento.</summary>
+    public static string? Validate(string key, JsonElement config, Guid eventId) =>
+        Validate(key, config) ?? Photos.Validate(config, eventId);
+
     /// <summary>jsonb guardado como texto → JsonElement para devolverlo como objeto, no como string.</summary>
     public static JsonElement Parse(string json) =>
         JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json).RootElement.Clone();
