@@ -68,6 +68,7 @@ builder.Services
         o.Password.RequireNonAlphanumeric = false;
     })
     .AddRoles<IdentityRole<Guid>>()
+    .AddErrorDescriber<SpanishIdentityErrors>()
     .AddEntityFrameworkStores<AppDbContext>();
 
 builder.Services.ConfigureApplicationCookie(o =>
