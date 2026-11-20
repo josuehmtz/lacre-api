@@ -11,6 +11,7 @@ using Invitations.Api.Features.Public;
 using Invitations.Api.Features.Seating;
 using Invitations.Api.Features.Staff;
 using Invitations.Api.Features.Templates;
+using Invitations.Api.Features.Venues;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -57,7 +58,8 @@ builder.Services.AddAuthorizationBuilder()
     // Las hostess usan su propia sesión, limitada a un evento (ver Features/Staff).
     .AddPolicy(StaffAuth.Policy, p => p
         .AddAuthenticationSchemes(StaffAuth.Scheme)
-        .RequireClaim(StaffAuth.AccessClaim));
+        .RequireClaim(StaffAuth.AccessClaim))
+    .AddPolicy(AdminAuth.Policy, p => AdminAuth.Configure(p, builder.Configuration));
 builder.Services
     .AddIdentityApiEndpoints<AppUser>(o =>
     {
@@ -171,5 +173,6 @@ api.MapSeatingEndpoints();
 api.MapBillingEndpoints();
 api.MapStaffAccessEndpoints();
 api.MapStaffEndpoints();
+api.MapVenueEndpoints();
 
 app.Run();

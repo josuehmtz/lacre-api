@@ -26,8 +26,9 @@ public static class StaffAccessEndpoints
 
         group.MapGet("/", async (Guid eventId, ClaimsPrincipal user, AppDbContext db) =>
         {
-            if (!await db.Events.OwnedBy(user.GetUserId()).AnyAsync(e => e.Id == eventId))
-                return Results.NotFound();
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            if (ev is null) return Results.NotFound();
+            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
 
             var list = await db.StaffAccesses.Where(s => s.EventId == eventId)
                 .OrderBy(s => s.CreatedAt)
@@ -40,8 +41,9 @@ public static class StaffAccessEndpoints
         group.MapPost("/", async (Guid eventId, CreateStaffAccessRequest req, ClaimsPrincipal user, AppDbContext db,
             TimeProvider clock) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
+            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
             if (ev.Status == EventStatus.Archived)
                 return Results.Problem("El evento está archivado.", statusCode: StatusCodes.Status409Conflict);
             if (await db.StaffAccesses.CountAsync(s => s.EventId == eventId) >= 20)
@@ -66,7 +68,7 @@ public static class StaffAccessEndpoints
 
         group.MapDelete("/{id:guid}", async (Guid eventId, Guid id, ClaimsPrincipal user, AppDbContext db) =>
         {
-            if (!await db.Events.OwnedBy(user.GetUserId()).AnyAsync(e => e.Id == eventId))
+            if (!await db.Events.AccessibleBy(user.GetUserId()).AnyAsync(e => e.Id == eventId))
                 return Results.NotFound();
 
             // Las entradas registradas se conservan (quedan sin hostess asociada).

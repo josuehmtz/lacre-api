@@ -9,7 +9,7 @@ public enum EventType
 
 public enum EventStatus
 {
-    /// <summary>El cliente está armando su invitación; aún no paga.</summary>
+    /// <summary>Pago pendiente: aún no se puede usar nada del evento.</summary>
     Draft,
     /// <summary>Pagado y publicado: los links de invitación están activos.</summary>
     Published,
@@ -37,4 +37,11 @@ public enum TableShape
     Round,
     Rectangle,
     Square,
+}
+
+public enum OrderSource
+{
+    Stripe,
+    /// <summary>Paquete incluido en el convenio de un salón (se cobra fuera de la página).</summary>
+    Agreement,
 }

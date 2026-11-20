@@ -32,14 +32,16 @@ public static class SeatingEndpoints
 
         group.MapGet("/", async (Guid eventId, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
-            return ev is null ? Results.NotFound() : Results.Ok(await LoadAsync(db, ev));
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            if (ev is null) return Results.NotFound();
+            return EventAccess.RequirePaid(ev) ?? Results.Ok(await LoadAsync(db, ev));
         });
 
         group.MapPut("/plan", async (Guid eventId, SavePlanRequest req, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
+            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
             if (ev.Status == EventStatus.Archived) return Archived();
 
             if (SeatingRules.ValidateLayout(req.Layout) is { } layoutError) return Invalid(layoutError);
@@ -88,8 +90,9 @@ public static class SeatingEndpoints
 
         group.MapPut("/assignments", async (Guid eventId, AssignRequest req, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
+            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
             if (ev.Status == EventStatus.Archived) return Archived();
             if (req.Moves.Count is 0 or > 500) return Invalid("Indica de 1 a 500 movimientos.");
 

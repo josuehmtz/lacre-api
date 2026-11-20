@@ -25,8 +25,13 @@ public class Plan
 public class Event
 {
     public Guid Id { get; set; }
-    public Guid OwnerId { get; set; }
-    public AppUser Owner { get; set; } = null!;
+    /// <summary>Cliente dueño del evento. Null mientras un evento creado por un salón no tiene cliente vinculado.</summary>
+    public Guid? OwnerId { get; set; }
+    public AppUser? Owner { get; set; }
+
+    /// <summary>Salón con convenio que administra el evento (null si el cliente lo compró directo).</summary>
+    public Guid? VenueId { get; set; }
+    public Venue? Venue { get; set; }
 
     public EventType Type { get; set; }
     public EventStatus Status { get; set; } = EventStatus.Draft;
@@ -151,6 +156,9 @@ public class Order
     public Plan Plan { get; set; } = null!;
     public decimal AmountMxn { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.Pending;
+    /// <summary>Pago con Stripe o paquete incluido en el convenio de un salón.</summary>
+    public OrderSource Source { get; set; } = OrderSource.Stripe;
+    public Guid? VenueId { get; set; }
     /// <summary>Id de la sesión de checkout del proveedor de pagos (Stripe).</summary>
     public string? ProviderSessionId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

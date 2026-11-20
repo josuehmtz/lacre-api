@@ -5,12 +5,6 @@ namespace Invitations.Tests;
 public class PassRulesTests
 {
     [Theory]
-    [InlineData(0, 500, 500)]   // Borrador: usa el paquete más grande.
-    [InlineData(250, 500, 250)] // Pagado: usa el límite de su paquete.
-    public void EffectiveLimit_uses_paid_plan_or_largest_while_draft(int eventMax, int largest, int expected) =>
-        Assert.Equal(expected, PassRules.EffectiveLimit(eventMax, largest));
-
-    [Theory]
     [InlineData(100, 96, 0, 4, true)]    // Nueva invitación que llena justo el límite.
     [InlineData(100, 96, 0, 5, false)]   // Nueva invitación que se pasa por uno.
     [InlineData(100, 100, 10, 10, true)] // Editar sin cambiar pases con el evento lleno.

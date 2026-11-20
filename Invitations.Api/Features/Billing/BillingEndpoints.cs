@@ -14,11 +14,18 @@ public static class BillingEndpoints
     public record PlanOptionDto(string Code, string Name, int MaxPasses, decimal PriceMxn, decimal AmountToPay,
         bool Available, string? Reason);
 
-    public record OrderDto(Guid Id, string PlanName, decimal AmountMxn, OrderStatus Status, DateTimeOffset CreatedAt,
-        DateTimeOffset? PaidAt);
+    public record OrderDto(Guid Id, string PlanName, decimal AmountMxn, OrderStatus Status, OrderSource Source,
+        DateTimeOffset CreatedAt, DateTimeOffset? PaidAt);
 
+    /// <summary>
+    /// <paramref name="AgreementVenue"/>: si quien consulta es personal del salón con convenio vigente,
+    /// el nombre del salón; puede cambiar el paquete sin pago en línea.
+    /// </summary>
     public record BillingDto(EventStatus EventStatus, string? CurrentPlan, int MaxPasses, int TotalPasses,
-        bool PaymentsEnabled, IReadOnlyList<PlanOptionDto> Options, IReadOnlyList<OrderDto> Orders);
+        bool PaymentsEnabled, IReadOnlyList<PlanOptionDto> Options, IReadOnlyList<OrderDto> Orders,
+        string? ManagedBy, string? AgreementVenue);
+
+    public record AgreementPlanRequest(string PlanCode);
 
     public record CheckoutRequestDto(string PlanCode);
 
@@ -30,10 +37,37 @@ public static class BillingEndpoints
     {
         var group = api.MapGroup("/events/{eventId:guid}").WithTags("Billing").RequireAuthorization();
 
-        group.MapGet("/billing", async (Guid eventId, ClaimsPrincipal user, AppDbContext db, IPaymentGateway gateway) =>
+        group.MapGet("/billing", async (Guid eventId, ClaimsPrincipal user, AppDbContext db, IPaymentGateway gateway,
+            TimeProvider clock) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).Include(e => e.Plan).FirstOrDefaultAsync(e => e.Id == eventId);
-            return ev is null ? Results.NotFound() : Results.Ok(await LoadAsync(db, ev, gateway));
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).Include(e => e.Plan).Include(e => e.Venue)
+                .FirstOrDefaultAsync(e => e.Id == eventId);
+            return ev is null ? Results.NotFound() : Results.Ok(await LoadAsync(db, ev, gateway, user.GetUserId(), clock));
+        });
+
+        // El personal del salón cambia el paquete (p. ej. el cliente contrató uno más grande) dentro del convenio.
+        group.MapPost("/agreement-plan", async (Guid eventId, AgreementPlanRequest req, ClaimsPrincipal user,
+            AppDbContext db, IPaymentGateway gateway, TimeProvider clock) =>
+        {
+            var userId = user.GetUserId();
+            var ev = await db.Events.AccessibleBy(userId).Include(e => e.Plan).Include(e => e.Venue)
+                .FirstOrDefaultAsync(e => e.Id == eventId);
+            if (ev is null) return Results.NotFound();
+            if (ev.Venue is null || !await db.ManagesAsync(ev, userId))
+                return Results.Problem("Solo el personal del salón con convenio puede cambiar el paquete así.",
+                    statusCode: StatusCodes.Status403Forbidden);
+
+            var plan = await db.Plans.FirstOrDefaultAsync(p => p.Code == req.PlanCode);
+            if (plan is null) return Results.NotFound();
+
+            var now = clock.GetUtcNow();
+            var totalPasses = await db.Invitations.Where(i => i.EventId == eventId).SumAsync(i => i.Passes);
+            if (VenueRules.CannotGrantReason(ev.Venue, plan, ev.Plan, totalPasses, ev.Status, now) is { } reason)
+                return Results.Problem(reason, statusCode: StatusCodes.Status409Conflict);
+
+            db.Orders.Add(VenueRules.GrantPlan(ev, plan, ev.Venue, now));
+            await db.SaveChangesAsync();
+            return Results.Ok(await LoadAsync(db, ev, gateway, userId, clock));
         });
 
         group.MapPost("/checkout", async (Guid eventId, CheckoutRequestDto req, ClaimsPrincipal user, AppDbContext db,
@@ -42,7 +76,7 @@ public static class BillingEndpoints
             if (!gateway.IsConfigured)
                 return Results.Problem("Los pagos aún no están configurados.", statusCode: StatusCodes.Status503ServiceUnavailable);
 
-            var ev = await db.Events.OwnedBy(user.GetUserId()).Include(e => e.Plan).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).Include(e => e.Plan).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
 
             var plan = await db.Plans.FirstOrDefaultAsync(p => p.Code == req.PlanCode);
@@ -97,7 +131,7 @@ public static class BillingEndpoints
         group.MapPost("/checkout/sync", async (Guid eventId, SyncRequest req, ClaimsPrincipal user, AppDbContext db,
             IPaymentGateway gateway, TimeProvider clock) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
             if (!gateway.IsConfigured) return Results.Problem("Los pagos aún no están configurados.", statusCode: 503);
 
@@ -108,7 +142,8 @@ public static class BillingEndpoints
             await ApplyAsync(db, status, clock);
 
             await db.Entry(ev).Reference(e => e.Plan).LoadAsync();
-            return Results.Ok(await LoadAsync(db, ev, gateway));
+            await db.Entry(ev).Reference(e => e.Venue).LoadAsync();
+            return Results.Ok(await LoadAsync(db, ev, gateway, user.GetUserId(), clock));
         });
 
         // Stripe avisa aquí de pagos completados (incluidos los de OXXO, que se pagan días después).
@@ -159,13 +194,14 @@ public static class BillingEndpoints
         await db.SaveChangesAsync();
     }
 
-    private static async Task<BillingDto> LoadAsync(AppDbContext db, Event ev, IPaymentGateway gateway)
+    private static async Task<BillingDto> LoadAsync(AppDbContext db, Event ev, IPaymentGateway gateway, Guid userId,
+        TimeProvider clock)
     {
         var plans = await db.Plans.Where(p => p.IsActive).OrderBy(p => p.MaxPasses).ToListAsync();
         var totalPasses = await db.Invitations.Where(i => i.EventId == ev.Id).SumAsync(i => i.Passes);
         var orders = await db.Orders.Where(o => o.EventId == ev.Id)
             .OrderByDescending(o => o.CreatedAt)
-            .Select(o => new OrderDto(o.Id, o.Plan.Name, o.AmountMxn, o.Status, o.CreatedAt, o.PaidAt))
+            .Select(o => new OrderDto(o.Id, o.Plan.Name, o.AmountMxn, o.Status, o.Source, o.CreatedAt, o.PaidAt))
             .ToListAsync();
 
         var options = plans.Select(p =>
@@ -175,6 +211,12 @@ public static class BillingEndpoints
                 reason is null, reason);
         }).ToList();
 
-        return new BillingDto(ev.Status, ev.Plan?.Name, ev.MaxPasses, totalPasses, gateway.IsConfigured, options, orders);
+        var agreementVenue = ev.Venue is not null && VenueRules.AgreementActive(ev.Venue, clock.GetUtcNow()) &&
+            await db.ManagesAsync(ev, userId)
+                ? ev.Venue.Name
+                : null;
+
+        return new BillingDto(ev.Status, ev.Plan?.Name, ev.MaxPasses, totalPasses, gateway.IsConfigured, options, orders,
+            ev.Venue?.Name, agreementVenue);
     }
 }

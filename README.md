@@ -55,6 +55,14 @@ Variables y secretos del servicio (Secret Manager):
 | `Authentication__Google__ClientId` / `ClientSecret` | secretos `google-client-id` / `google-client-secret` |
 | `App__PublicUrl` | URL del frontend (regresos de Stripe y Google) |
 | `Database__MigrateOnStartup` | `true` |
+| `Admin__Emails` | correos de administradores de Lacre, separados por coma (panel de salones con convenio) |
 
 Webhook de Stripe: `https://<api>/api/stripe/webhook` con los eventos `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` y `checkout.session.expired`.
+
+## Candados de costo (Google Cloud)
+
+- Cloud Run con `--max-instances 1`.
+- Presupuesto `lacre-tope` ($20 MXN/mes) → Pub/Sub `billing-alerts` → función `stop-billing`
+  ([infra/stop-billing](infra/stop-billing)), que desvincula la facturación al llegar al tope.
+- Limpieza automática de imágenes viejas en Artifact Registry.

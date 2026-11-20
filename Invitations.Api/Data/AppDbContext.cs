@@ -23,6 +23,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<CheckIn> CheckIns => Set<CheckIn>();
     public DbSet<StaffAccess> StaffAccesses => Set<StaffAccess>();
     public DbSet<Order> Orders => Set<Order>();
+    public DbSet<Venue> Venues => Set<Venue>();
+    public DbSet<VenueMember> VenueMembers => Set<VenueMember>();
+    public DbSet<AccessLink> AccessLinks => Set<AccessLink>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -53,6 +56,33 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.Type).HasConversion<string>().HasMaxLength(20);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
             e.HasOne(x => x.Owner).WithMany(u => u.Events).HasForeignKey(x => x.OwnerId);
+            // Un salón con eventos no se borra (se conserva el historial del convenio).
+            e.HasOne(x => x.Venue).WithMany(v => v.Events).HasForeignKey(x => x.VenueId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Venue>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.ContactName).HasMaxLength(200);
+            e.Property(x => x.Phone).HasMaxLength(20);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+        });
+
+        b.Entity<VenueMember>(e =>
+        {
+            e.HasKey(x => new { x.VenueId, x.UserId });
+            e.HasOne(x => x.Venue).WithMany(v => v.Members).HasForeignKey(x => x.VenueId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
+        });
+
+        b.Entity<AccessLink>(e =>
+        {
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
+            e.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Venue).WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<EventTable>(e =>
@@ -94,7 +124,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.Property(x => x.AmountMxn).HasPrecision(10, 2);
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Source).HasConversion<string>().HasMaxLength(20);
             e.HasIndex(x => x.ProviderSessionId);
+            e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -31,8 +31,9 @@ public static class InvitationEndpoints
 
         group.MapGet("/", async (Guid eventId, ClaimsPrincipal user, AppDbContext db) =>
         {
-            if (!await db.Events.OwnedBy(user.GetUserId()).AnyAsync(e => e.Id == eventId))
-                return Results.NotFound();
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            if (ev is null) return Results.NotFound();
+            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
 
             var list = await db.Invitations.AsNoTracking()
                 .Where(i => i.EventId == eventId)
@@ -44,7 +45,7 @@ public static class InvitationEndpoints
 
         group.MapPost("/", async (Guid eventId, SaveInvitationRequest req, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
             if (Editable(ev) is { } blocked) return blocked;
             if (await CheckLimitAsync(db, ev, previousPasses: 0, req.Passes) is { } overLimit) return overLimit;
@@ -63,7 +64,7 @@ public static class InvitationEndpoints
 
         group.MapPut("/{id:guid}", async (Guid eventId, Guid id, SaveInvitationRequest req, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
             if (Editable(ev) is { } blocked) return blocked;
 
@@ -84,7 +85,7 @@ public static class InvitationEndpoints
         group.MapPut("/{id:guid}/rsvp", async (Guid eventId, Guid id, ManualRsvpRequest req, ClaimsPrincipal user,
             AppDbContext db, TimeProvider clock) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
             if (Editable(ev) is { } blocked) return blocked;
 
@@ -103,7 +104,7 @@ public static class InvitationEndpoints
 
         group.MapDelete("/{id:guid}", async (Guid eventId, Guid id, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
             if (Editable(ev) is { } blocked) return blocked;
 
@@ -114,9 +115,9 @@ public static class InvitationEndpoints
         return api;
     }
 
-    private static IResult? Editable(Event ev) => ev.Status == EventStatus.Archived
+    private static IResult? Editable(Event ev) => EventAccess.RequirePaid(ev) ?? (ev.Status == EventStatus.Archived
         ? Results.Problem("El evento está archivado y ya no se puede editar.", statusCode: 409)
-        : null;
+        : null);
 
     private static async Task<IResult?> CheckLimitAsync(AppDbContext db, Event ev, int previousPasses, int newPasses)
     {

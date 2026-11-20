@@ -23,6 +23,52 @@ namespace Invitations.Api.Data.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "unaccent");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Invitations.Api.Domain.AccessLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UsedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("VenueId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("VenueId");
+
+                    b.ToTable("AccessLinks");
+                });
+
             modelBuilder.Entity("Invitations.Api.Domain.AppUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -140,7 +186,7 @@ namespace Invitations.Api.Data.Migrations
                     b.Property<int>("MaxPasses")
                         .HasColumnType("integer");
 
-                    b.Property<Guid>("OwnerId")
+                    b.Property<Guid?>("OwnerId")
                         .HasColumnType("uuid");
 
                     b.Property<int?>("PlanId")
@@ -179,6 +225,9 @@ namespace Invitations.Api.Data.Migrations
                     b.Property<string>("VenueAddress")
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("VenueId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("VenueName")
                         .HasColumnType("text");
 
@@ -187,6 +236,8 @@ namespace Invitations.Api.Data.Migrations
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("PlanId");
+
+                    b.HasIndex("VenueId");
 
                     b.ToTable("Events");
                 });
@@ -332,10 +383,18 @@ namespace Invitations.Api.Data.Migrations
                     b.Property<string>("ProviderSessionId")
                         .HasColumnType("text");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("VenueId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -344,6 +403,8 @@ namespace Invitations.Api.Data.Migrations
                     b.HasIndex("PlanId");
 
                     b.HasIndex("ProviderSessionId");
+
+                    b.HasIndex("VenueId");
 
                     b.ToTable("Orders");
                 });
@@ -447,6 +508,61 @@ namespace Invitations.Api.Data.Migrations
                     b.HasIndex("EventId");
 
                     b.ToTable("StaffAccesses");
+                });
+
+            modelBuilder.Entity("Invitations.Api.Domain.Venue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("AgreementEndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("AgreementStartsOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Venues");
+                });
+
+            modelBuilder.Entity("Invitations.Api.Domain.VenueMember", b =>
+                {
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("VenueId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("VenueMembers");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
@@ -598,6 +714,23 @@ namespace Invitations.Api.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("Invitations.Api.Domain.AccessLink", b =>
+                {
+                    b.HasOne("Invitations.Api.Domain.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Invitations.Api.Domain.Venue", "Venue")
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Event");
+
+                    b.Navigation("Venue");
+                });
+
             modelBuilder.Entity("Invitations.Api.Domain.CheckIn", b =>
                 {
                     b.HasOne("Invitations.Api.Domain.Invitation", "Invitation")
@@ -620,17 +753,22 @@ namespace Invitations.Api.Data.Migrations
                 {
                     b.HasOne("Invitations.Api.Domain.AppUser", "Owner")
                         .WithMany("Events")
-                        .HasForeignKey("OwnerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("OwnerId");
 
                     b.HasOne("Invitations.Api.Domain.Plan", "Plan")
                         .WithMany()
                         .HasForeignKey("PlanId");
 
+                    b.HasOne("Invitations.Api.Domain.Venue", "Venue")
+                        .WithMany("Events")
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Owner");
 
                     b.Navigation("Plan");
+
+                    b.Navigation("Venue");
                 });
 
             modelBuilder.Entity("Invitations.Api.Domain.EventTable", b =>
@@ -687,6 +825,11 @@ namespace Invitations.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Invitations.Api.Domain.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Event");
 
                     b.Navigation("Plan");
@@ -701,6 +844,25 @@ namespace Invitations.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("Invitations.Api.Domain.VenueMember", b =>
+                {
+                    b.HasOne("Invitations.Api.Domain.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Invitations.Api.Domain.Venue", "Venue")
+                        .WithMany("Members")
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+
+                    b.Navigation("Venue");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -780,6 +942,13 @@ namespace Invitations.Api.Data.Migrations
                     b.Navigation("CheckIns");
 
                     b.Navigation("Guests");
+                });
+
+            modelBuilder.Entity("Invitations.Api.Domain.Venue", b =>
+                {
+                    b.Navigation("Events");
+
+                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

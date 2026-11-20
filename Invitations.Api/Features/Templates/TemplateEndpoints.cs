@@ -21,14 +21,16 @@ public static class TemplateEndpoints
 
         group.MapGet("/", async (Guid eventId, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
-            return ev is null ? Results.NotFound() : Results.Ok(ToDto(ev));
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            if (ev is null) return Results.NotFound();
+            return EventAccess.RequirePaid(ev) ?? Results.Ok(ToDto(ev));
         });
 
         group.MapPut("/", async (Guid eventId, SaveTemplateRequest req, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var ev = await db.Events.OwnedBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+            var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
+            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
             if (ev.Status == EventStatus.Archived)
                 return Results.Problem("El evento está archivado y ya no se puede editar.", statusCode: 409);
 
