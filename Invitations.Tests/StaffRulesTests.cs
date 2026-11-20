@@ -137,4 +137,54 @@ public class CheckInRulesTests
         // Mismo resultado que crypto.subtle.digest('SHA-256') en el navegador.
         Assert.Equal("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", CheckInRules.TokenHash("hello"));
     }
+
+    private static Invitation WithGuests(int passes, int named, params int[] checkIns)
+    {
+        var inv = NewInvitation(passes, RsvpStatus.Confirmed, named, checkIns);
+        for (var i = 0; i < named; i++)
+            inv.Guests.Add(new Guest { Id = Guid.NewGuid(), InvitationId = inv.Id, Name = $"Persona {i + 1}" });
+        return inv;
+    }
+
+    [Fact]
+    public void Partial_arrival_by_name_then_the_rest()
+    {
+        // Familia de 5: a las 6:00 llegan 3, a las 6:30 los otros 2.
+        var inv = WithGuests(5, 5);
+        var first = inv.Guests.Take(3).Select(g => g.Id).ToList();
+        Assert.Null(CheckInRules.ValidateGuests(inv, 3, first));
+        Assert.Equal(3, CheckInRules.MarkArrived(inv, Guid.NewGuid(), first));
+
+        var rest = inv.Guests.Where(g => g.CheckInId is null).Select(g => g.Id).ToList();
+        Assert.Equal(2, rest.Count);
+        Assert.Null(CheckInRules.ValidateGuests(inv, 2, rest));
+        // Intentar marcar otra vez a alguien que ya entró.
+        Assert.NotNull(CheckInRules.ValidateGuests(inv, 1, [first[0]]));
+    }
+
+    [Fact]
+    public void ValidateGuests_allows_unnamed_companions_but_not_more_names_than_people()
+    {
+        var inv = WithGuests(5, 3);
+        var named = inv.Guests.Select(g => g.Id).ToList();
+        Assert.Null(CheckInRules.ValidateGuests(inv, 5, named));      // 3 con nombre + 2 acompañantes
+        Assert.Null(CheckInRules.ValidateGuests(inv, 2, []));         // solo cantidad, como antes
+        Assert.NotNull(CheckInRules.ValidateGuests(inv, 2, named));   // 3 marcados pero entran 2
+        Assert.NotNull(CheckInRules.ValidateGuests(inv, 2, [named[0], named[0]]));
+        Assert.NotNull(CheckInRules.ValidateGuests(inv, 1, [Guid.NewGuid()]));
+    }
+
+    [Fact]
+    public void MarkArrived_offline_skips_people_another_door_already_marked()
+    {
+        var inv = WithGuests(4, 4);
+        var otherDoor = Guid.NewGuid();
+        inv.Guests[0].CheckInId = otherDoor;
+
+        var marked = CheckInRules.MarkArrived(inv, Guid.NewGuid(), [inv.Guests[0].Id, inv.Guests[1].Id, Guid.NewGuid()]);
+
+        Assert.Equal(1, marked);
+        Assert.Equal(otherDoor, inv.Guests[0].CheckInId);
+        Assert.NotNull(inv.Guests[1].CheckInId);
+    }
 }

@@ -85,6 +85,42 @@ public static class CheckInRules
         return warnings;
     }
 
+    // --- Quiénes llegaron ---
+
+    /// <summary>
+    /// Valida las personas marcadas al registrar una entrada con señal: deben ser de esta invitación,
+    /// no haber llegado ya y no ser más que el total de personas que entran.
+    /// </summary>
+    public static string? ValidateGuests(Invitation inv, int count, IReadOnlyCollection<Guid> guestIds)
+    {
+        if (guestIds.Count == 0) return null;
+        if (guestIds.Distinct().Count() != guestIds.Count) return "Una persona está marcada dos veces.";
+        if (guestIds.Count > count) return "Marcaste más personas que las que están entrando.";
+        var guests = inv.Guests.ToDictionary(g => g.Id);
+        foreach (var id in guestIds)
+        {
+            if (!guests.TryGetValue(id, out var guest)) return "Una de las personas no pertenece a esta invitación.";
+            if (guest.CheckInId is not null) return $"{guest.Name} ya había llegado.";
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Marca a las personas como llegadas con esta entrada. Ignora las que no son de la invitación o ya llegaron
+    /// (sin conexión, otra puerta pudo registrarlas antes): la entrada se guarda igual.
+    /// </summary>
+    public static int MarkArrived(Invitation inv, Guid checkInId, IEnumerable<Guid> guestIds)
+    {
+        var wanted = guestIds.ToHashSet();
+        var marked = 0;
+        foreach (var guest in inv.Guests.Where(g => wanted.Contains(g.Id) && g.CheckInId is null))
+        {
+            guest.CheckInId = checkInId;
+            marked++;
+        }
+        return marked;
+    }
+
     // --- Modo sin conexión ---
 
     /// <summary>Entradas por sincronización: un turno de puerta completo cabe de sobra.</summary>

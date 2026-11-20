@@ -24,7 +24,8 @@ public static class StaffEndpoints
         Guid AccessId, string Label, string EventTitle, DateTimeOffset StartsAt, string? VenueName,
         int ConfirmedPasses, int CheckedIn, DateTimeOffset ExpiresAt);
 
-    public record GuestDto(string Name, int? TableNumber);
+    /// <summary><paramref name="Arrived"/>: ya entró (se marcó al registrar una entrada).</summary>
+    public record GuestDto(Guid Id, string Name, int? TableNumber, bool Arrived);
 
     public record CheckInDto(Guid Id, int Count, DateTimeOffset At, string? StaffLabel);
 
@@ -41,7 +42,7 @@ public static class StaffEndpoints
     public record OfflineSnapshotDto(DateTimeOffset GeneratedAt, StaffSessionDto Session, IReadOnlyList<OfflineInvitationDto> Invitations);
 
     /// <summary><paramref name="Id"/> lo genera el celular: reenviar la misma entrada no la duplica.</summary>
-    public record OfflineCheckIn(Guid Id, Guid InvitationId, int Count, DateTimeOffset At);
+    public record OfflineCheckIn(Guid Id, Guid InvitationId, int Count, DateTimeOffset At, IReadOnlyList<Guid>? GuestIds = null);
 
     public record SyncRequest(IReadOnlyList<OfflineCheckIn> CheckIns);
 
@@ -52,7 +53,8 @@ public static class StaffEndpoints
 
     public record ScanRequest(string Content);
 
-    public record CheckInRequest(string Token, int Count);
+    /// <summary><paramref name="GuestIds"/>: quiénes de la invitación entran (opcional; el resto cuenta como acompañantes).</summary>
+    public record CheckInRequest(string Token, int Count, IReadOnlyList<Guid>? GuestIds = null);
 
     public record SearchResultDto(string Token, string DisplayName, int Passes, RsvpStatus RsvpStatus, int CheckedIn);
 
@@ -149,10 +151,11 @@ public static class StaffEndpoints
             if (locked == Guid.Empty) return Results.Problem("Esta invitación no pertenece a este evento.", statusCode: 404);
 
             var inv = (await LoadInvitationAsync(db, access.EventId, req.Token))!;
-            if (CheckInRules.Validate(inv, req.Count) is { } error)
+            var guestIds = req.GuestIds ?? [];
+            if ((CheckInRules.Validate(inv, req.Count) ?? CheckInRules.ValidateGuests(inv, req.Count, guestIds.ToList())) is { } error)
                 return Results.Problem(error, statusCode: StatusCodes.Status409Conflict);
 
-            inv.CheckIns.Add(new CheckIn
+            var checkIn = new CheckIn
             {
                 Id = Guid.CreateVersion7(),
                 InvitationId = inv.Id,
@@ -160,7 +163,9 @@ public static class StaffEndpoints
                 At = clock.GetUtcNow(),
                 StaffAccessId = access.Id,
                 StaffAccess = access,
-            });
+            };
+            inv.CheckIns.Add(checkIn);
+            CheckInRules.MarkArrived(inv, checkIn.Id, guestIds);
             await db.SaveChangesAsync();
             await tx.CommitAsync();
             return Results.Ok(ToScanResult(inv));
@@ -238,7 +243,8 @@ public static class StaffEndpoints
                     continue;
                 }
 
-                var inv = await db.Invitations.Include(i => i.CheckIns).FirstAsync(i => i.Id == item.InvitationId);
+                var inv = await db.Invitations.Include(i => i.CheckIns).Include(i => i.Guests)
+                    .FirstAsync(i => i.Id == item.InvitationId);
                 var outcome = CheckInRules.ClassifyOffline(inv, item.Count);
                 if (outcome == CheckInRules.OfflineOutcome.Invalid)
                 {
@@ -254,6 +260,7 @@ public static class StaffEndpoints
                     At = CheckInRules.OfflineTime(item.At, now),
                     StaffAccessId = access.Id,
                 });
+                CheckInRules.MarkArrived(inv, item.Id, item.GuestIds ?? []);
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
                 results.Add(new(item.Id, outcome == CheckInRules.OfflineOutcome.Exceeded ? "exceeded" : "applied"));
@@ -300,7 +307,8 @@ public static class StaffEndpoints
 
     private static ScanResultDto ToScanResult(Invitation inv)
     {
-        var guests = inv.Guests.OrderBy(g => g.Id).Select(g => new GuestDto(g.Name, g.Table?.Number)).ToList();
+        var guests = inv.Guests.OrderBy(g => g.Id)
+            .Select(g => new GuestDto(g.Id, g.Name, g.Table?.Number, g.CheckInId is not null)).ToList();
         return new ScanResultDto(
             inv.Token, inv.DisplayName, inv.Passes, inv.RsvpStatus, inv.ConfirmedPasses,
             CheckInRules.CheckedIn(inv), CheckInRules.Remaining(inv),

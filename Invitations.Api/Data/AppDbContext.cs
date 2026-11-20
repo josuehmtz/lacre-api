@@ -111,6 +111,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             // Si se borra una mesa, sus invitados quedan sin asignar.
             e.HasOne(x => x.Table).WithMany(t => t.Guests)
                 .HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.SetNull);
+            // Si se deshace la entrada, las personas vuelven a "no ha llegado".
+            e.HasOne(x => x.CheckIn).WithMany()
+                .HasForeignKey(x => x.CheckInId).OnDelete(DeleteBehavior.SetNull);
         });
 
         b.Entity<CheckIn>(e =>

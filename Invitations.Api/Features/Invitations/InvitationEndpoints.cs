@@ -12,7 +12,9 @@ public static class InvitationEndpoints
     public record InvitationDto(
         Guid Id, string DisplayName, int Passes, string? Phone, string Token,
         RsvpStatus RsvpStatus, int ConfirmedPasses, DateTimeOffset? RespondedAt, string? Message,
-        IReadOnlyList<string> GuestNames);
+        IReadOnlyList<string> GuestNames,
+        // El día del evento: cuántos entraron y quiénes (las personas que la hostess marcó por nombre).
+        int CheckedIn, IReadOnlyList<string> ArrivedNames);
 
     /// <summary>El cliente registra a mano una respuesta (p. ej. le avisaron por teléfono).</summary>
     public record ManualRsvpRequest(bool Attending, int ConfirmedPasses, IReadOnlyList<string>? GuestNames);
@@ -38,6 +40,8 @@ public static class InvitationEndpoints
             var list = await db.Invitations.AsNoTracking()
                 .Where(i => i.EventId == eventId)
                 .Include(i => i.Guests)
+                .Include(i => i.CheckIns)
+                .AsSplitQuery()
                 .OrderBy(i => i.DisplayName)
                 .ToListAsync();
             return Results.Ok(list.Select(ToDto));
@@ -140,5 +144,6 @@ public static class InvitationEndpoints
 
     private static InvitationDto ToDto(Invitation i) =>
         new(i.Id, i.DisplayName, i.Passes, i.Phone, i.Token, i.RsvpStatus, i.ConfirmedPasses,
-            i.RespondedAt, i.Message, i.Guests.OrderBy(g => g.Id).Select(g => g.Name).ToList());
+            i.RespondedAt, i.Message, i.Guests.OrderBy(g => g.Id).Select(g => g.Name).ToList(),
+            CheckInRules.CheckedIn(i), i.Guests.Where(g => g.CheckInId is not null).OrderBy(g => g.Id).Select(g => g.Name).ToList());
 }

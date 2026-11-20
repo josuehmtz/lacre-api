@@ -287,6 +287,9 @@ namespace Invitations.Api.Data.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("CheckInId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid>("InvitationId")
                         .HasColumnType("uuid");
 
@@ -299,6 +302,8 @@ namespace Invitations.Api.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CheckInId");
 
                     b.HasIndex("InvitationId");
 
@@ -791,6 +796,11 @@ namespace Invitations.Api.Data.Migrations
 
             modelBuilder.Entity("Invitations.Api.Domain.Guest", b =>
                 {
+                    b.HasOne("Invitations.Api.Domain.CheckIn", "CheckIn")
+                        .WithMany()
+                        .HasForeignKey("CheckInId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Invitations.Api.Domain.Invitation", "Invitation")
                         .WithMany("Guests")
                         .HasForeignKey("InvitationId")
@@ -801,6 +811,8 @@ namespace Invitations.Api.Data.Migrations
                         .WithMany("Guests")
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("CheckIn");
 
                     b.Navigation("Invitation");
 

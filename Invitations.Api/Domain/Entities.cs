@@ -114,6 +114,10 @@ public class Guest
     public string Name { get; set; } = "";
     public Guid? TableId { get; set; }
     public EventTable? Table { get; set; }
+
+    /// <summary>Entrada en la que llegó esta persona (null = no ha llegado). Al deshacer la entrada vuelve a null.</summary>
+    public Guid? CheckInId { get; set; }
+    public CheckIn? CheckIn { get; set; }
 }
 
 /// <summary>Registro de entrada en la puerta (permite llegadas parciales: 3 de 4).</summary>
