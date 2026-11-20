@@ -41,10 +41,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.PriceMxn).HasPrecision(10, 2);
             e.HasData(
-                // Precios de prueba; los definitivos se cambian con una migración.
-                new Plan { Id = 1, Code = "basico", Name = "Básico", MaxPasses = 100, PriceMxn = 499 },
-                new Plan { Id = 2, Code = "estandar", Name = "Estándar", MaxPasses = 250, PriceMxn = 899 },
-                new Plan { Id = 3, Code = "premium", Name = "Premium", MaxPasses = 500, PriceMxn = 1499 });
+                // Precios ajustados al mercado MX (nov 2026); cambiarlos requiere una migración.
+                new Plan { Id = 1, Code = "basico", Name = "Básico", MaxPasses = 100, PriceMxn = 890 },
+                new Plan { Id = 2, Code = "estandar", Name = "Estándar", MaxPasses = 250, PriceMxn = 1490 },
+                new Plan { Id = 3, Code = "premium", Name = "Premium", MaxPasses = 500, PriceMxn = 2190 });
         });
 
         b.Entity<Event>(e =>
@@ -67,6 +67,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.ContactName).HasMaxLength(200);
             e.Property(x => x.Phone).HasMaxLength(20);
             e.Property(x => x.Notes).HasMaxLength(1000);
+            e.Property(x => x.TerminationReason).HasMaxLength(500);
         });
 
         b.Entity<VenueMember>(e =>

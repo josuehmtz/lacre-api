@@ -452,7 +452,7 @@ namespace Invitations.Api.Data.Migrations
                             IsActive = true,
                             MaxPasses = 100,
                             Name = "Básico",
-                            PriceMxn = 499m
+                            PriceMxn = 890m
                         },
                         new
                         {
@@ -461,7 +461,7 @@ namespace Invitations.Api.Data.Migrations
                             IsActive = true,
                             MaxPasses = 250,
                             Name = "Estándar",
-                            PriceMxn = 899m
+                            PriceMxn = 1490m
                         },
                         new
                         {
@@ -470,7 +470,7 @@ namespace Invitations.Api.Data.Migrations
                             IsActive = true,
                             MaxPasses = 500,
                             Name = "Premium",
-                            PriceMxn = 1499m
+                            PriceMxn = 2190m
                         });
                 });
 
@@ -516,7 +516,7 @@ namespace Invitations.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateOnly>("AgreementEndsOn")
+                    b.Property<DateOnly?>("AgreementEndsOn")
                         .HasColumnType("date");
 
                     b.Property<DateOnly>("AgreementStartsOn")
@@ -541,6 +541,13 @@ namespace Invitations.Api.Data.Migrations
                     b.Property<string>("Phone")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("TerminatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TerminationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.HasKey("Id");
 

@@ -31,7 +31,8 @@ public static class AdminAuth
 
 public static class VenueEndpoints
 {
-    public record MyVenueDto(Guid Id, string Name, DateOnly AgreementStartsOn, DateOnly AgreementEndsOn, bool AgreementActive);
+    public record MyVenueDto(Guid Id, string Name, DateOnly AgreementStartsOn, DateOnly? AgreementEndsOn,
+        AgreementStatus Status, DateTimeOffset? TerminatedAt);
 
     public record MeDto(string Email, bool IsAdmin, IReadOnlyList<MyVenueDto> Venues);
 
@@ -42,8 +43,11 @@ public static class VenueEndpoints
     public record VenueMemberDto(Guid UserId, string Email, DateTimeOffset AddedAt);
 
     public record VenueDto(Guid Id, string Name, string? ContactName, string? Phone, string? Notes,
-        DateOnly AgreementStartsOn, DateOnly AgreementEndsOn, bool AgreementActive,
+        DateOnly AgreementStartsOn, DateOnly? AgreementEndsOn, AgreementStatus Status,
+        DateTimeOffset? TerminatedAt, string? TerminationReason,
         IReadOnlyList<VenueMemberDto> Members, int EventCount);
+
+    public record TerminateRequest([property: StringLength(500)] string? Reason);
 
     public record VenueEventDto(Guid Id, string Title, DateTimeOffset StartsAt, EventStatus Status, string? PlanName,
         DateTimeOffset CreatedAt, bool HasClient);
@@ -54,7 +58,8 @@ public static class VenueEndpoints
         [property: StringLength(20)] string? Phone,
         [property: StringLength(1000)] string? Notes,
         DateOnly AgreementStartsOn,
-        DateOnly AgreementEndsOn);
+        /// <summary>null = por tiempo indefinido.</summary>
+        DateOnly? AgreementEndsOn);
 
     public record InviteLinkDto(string Token, DateTimeOffset ExpiresAt);
 
@@ -72,7 +77,7 @@ public static class VenueEndpoints
                 .OrderBy(v => v.Name).ToListAsync();
             return Results.Ok(new MeDto(email, AdminAuth.IsAdmin(user, config),
                 venues.Select(v => new MyVenueDto(v.Id, v.Name, v.AgreementStartsOn, v.AgreementEndsOn,
-                    VenueRules.AgreementActive(v, now))).ToList()));
+                    VenueRules.Status(v, now), v.TerminatedAt)).ToList()));
         }).WithTags("Me").RequireAuthorization();
 
         MapAccessLinks(api);
@@ -167,6 +172,43 @@ public static class VenueEndpoints
             return Results.Ok(ToDto(venue, count, clock.GetUtcNow()));
         });
 
+        // Terminar el convenio antes de tiempo: el salón ya no puede crear eventos; los existentes siguen funcionando.
+        admin.MapPost("/{id:guid}/terminate", async (Guid id, TerminateRequest req, AppDbContext db, TimeProvider clock) =>
+        {
+            var venue = await db.Venues.Include(v => v.Members).ThenInclude(m => m.User).FirstOrDefaultAsync(v => v.Id == id);
+            if (venue is null) return Results.NotFound();
+            var now = clock.GetUtcNow();
+            if (VenueRules.Terminate(venue, req.Reason, now) is { } problem)
+                return Results.Problem(problem, statusCode: StatusCodes.Status409Conflict);
+            await db.SaveChangesAsync();
+            return Results.Ok(ToDto(venue, await db.Events.CountAsync(e => e.VenueId == id), now));
+        });
+
+        admin.MapPost("/{id:guid}/reactivate", async (Guid id, AppDbContext db, TimeProvider clock) =>
+        {
+            var venue = await db.Venues.Include(v => v.Members).ThenInclude(m => m.User).FirstOrDefaultAsync(v => v.Id == id);
+            if (venue is null) return Results.NotFound();
+            VenueRules.Reactivate(venue);
+            await db.SaveChangesAsync();
+            return Results.Ok(ToDto(venue, await db.Events.CountAsync(e => e.VenueId == id), clock.GetUtcNow()));
+        });
+
+        // Solo se borran salones sin eventos: con eventos se conserva el historial (se termina el convenio).
+        admin.MapDelete("/{id:guid}", async (Guid id, AppDbContext db) =>
+        {
+            var venue = await db.Venues.FirstOrDefaultAsync(v => v.Id == id);
+            if (venue is null) return Results.NotFound();
+            if (await db.Events.AnyAsync(e => e.VenueId == id) || await db.Orders.AnyAsync(o => o.VenueId == id))
+                return Results.Problem(
+                    "Este salón ya tiene eventos, así que no se puede eliminar. Termina su convenio para que ya no pueda crear eventos.",
+                    statusCode: StatusCodes.Status409Conflict);
+
+            // Personal y links se borran en cascada.
+            db.Venues.Remove(venue);
+            await db.SaveChangesAsync();
+            return Results.NoContent();
+        });
+
         // Link para que una persona del salón se una a su personal. Cada link sirve para una persona.
         admin.MapPost("/{id:guid}/invite-link", async (Guid id, AppDbContext db, TimeProvider clock) =>
         {
@@ -211,7 +253,7 @@ public static class VenueEndpoints
 
     private static VenueDto ToDto(Venue v, int eventCount, DateTimeOffset now) => new(
         v.Id, v.Name, v.ContactName, v.Phone, v.Notes, v.AgreementStartsOn, v.AgreementEndsOn,
-        VenueRules.AgreementActive(v, now),
+        VenueRules.Status(v, now), v.TerminatedAt, v.TerminationReason,
         v.Members.OrderBy(m => m.AddedAt).Select(m => new VenueMemberDto(m.UserId, m.User?.Email ?? "", m.AddedAt)).ToList(),
         eventCount);
 }

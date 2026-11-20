@@ -25,6 +25,34 @@ public class VenueRulesTests
         Assert.Equal(expected, VenueRules.AgreementActive(VenueFor("2026-01-01", "2026-12-31"), DateTimeOffset.Parse(now)));
 
     [Fact]
+    public void Indefinite_agreement_never_expires()
+    {
+        var venue = VenueFor("2026-01-01", "2026-12-31");
+        venue.AgreementEndsOn = null;
+        Assert.Equal(AgreementStatus.Active, VenueRules.Status(venue, DateTimeOffset.Parse("2040-06-01T12:00:00-06:00")));
+        Assert.Equal(AgreementStatus.Upcoming, VenueRules.Status(venue, DateTimeOffset.Parse("2025-12-31T12:00:00-06:00")));
+        Assert.Null(VenueRules.ValidateAgreement(venue.AgreementStartsOn, null));
+    }
+
+    [Fact]
+    public void Terminating_early_stops_the_agreement_until_reactivated()
+    {
+        var venue = VenueFor("2026-01-01", "2026-12-31");
+        var now = DateTimeOffset.Parse("2026-06-01T12:00:00-06:00");
+
+        Assert.Null(VenueRules.Terminate(venue, "  Cerró el salón  ", now));
+        Assert.Equal(AgreementStatus.Terminated, VenueRules.Status(venue, now));
+        Assert.Equal("Cerró el salón", venue.TerminationReason);
+        Assert.NotNull(VenueRules.Terminate(venue, null, now));
+        Assert.Equal("El convenio del salón no está vigente.",
+            VenueRules.CannotGrantReason(venue, Basico, null, 0, EventStatus.Draft, now));
+
+        VenueRules.Reactivate(venue);
+        Assert.Equal(AgreementStatus.Active, VenueRules.Status(venue, now));
+        Assert.Null(venue.TerminationReason);
+    }
+
+    [Fact]
     public void Agreement_cannot_end_before_it_starts()
     {
         Assert.NotNull(VenueRules.ValidateAgreement(DateOnly.Parse("2026-05-01"), DateOnly.Parse("2026-04-30")));

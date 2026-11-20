@@ -17,8 +17,12 @@ public class Venue
 
     /// <summary>Primer día del convenio (inclusive).</summary>
     public DateOnly AgreementStartsOn { get; set; }
-    /// <summary>Último día del convenio (inclusive).</summary>
-    public DateOnly AgreementEndsOn { get; set; }
+    /// <summary>Último día del convenio (inclusive); null = por tiempo indefinido.</summary>
+    public DateOnly? AgreementEndsOn { get; set; }
+
+    /// <summary>Si se terminó antes de tiempo: cuándo y por qué. Desde ese momento ya no puede crear eventos.</summary>
+    public DateTimeOffset? TerminatedAt { get; set; }
+    public string? TerminationReason { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
@@ -34,6 +38,17 @@ public class VenueMember
     public Guid UserId { get; set; }
     public AppUser User { get; set; } = null!;
     public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public enum AgreementStatus
+{
+    /// <summary>Aún no llega la fecha de inicio.</summary>
+    Upcoming,
+    Active,
+    /// <summary>Pasó la fecha de término.</summary>
+    Expired,
+    /// <summary>Se terminó antes de tiempo.</summary>
+    Terminated,
 }
 
 public enum AccessLinkKind
@@ -71,14 +86,35 @@ public static class VenueRules
     public static DateOnly LocalToday(DateTimeOffset now) =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, Mexico).DateTime);
 
-    public static bool AgreementActive(Venue venue, DateTimeOffset now)
+    public static AgreementStatus Status(Venue venue, DateTimeOffset now)
     {
+        if (venue.TerminatedAt is not null) return AgreementStatus.Terminated;
         var today = LocalToday(now);
-        return today >= venue.AgreementStartsOn && today <= venue.AgreementEndsOn;
+        if (today < venue.AgreementStartsOn) return AgreementStatus.Upcoming;
+        if (venue.AgreementEndsOn is { } ends && today > ends) return AgreementStatus.Expired;
+        return AgreementStatus.Active;
     }
 
-    public static string? ValidateAgreement(DateOnly startsOn, DateOnly endsOn) =>
-        endsOn < startsOn ? "El convenio debe terminar después de que empieza." : null;
+    public static bool AgreementActive(Venue venue, DateTimeOffset now) => Status(venue, now) == AgreementStatus.Active;
+
+    public static string? ValidateAgreement(DateOnly startsOn, DateOnly? endsOn) =>
+        endsOn is { } ends && ends < startsOn ? "El convenio debe terminar después de que empieza." : null;
+
+    /// <summary>Termina el convenio de inmediato (p. ej. el salón lo canceló antes de tiempo).</summary>
+    public static string? Terminate(Venue venue, string? reason, DateTimeOffset now)
+    {
+        if (venue.TerminatedAt is not null) return "El convenio ya estaba terminado.";
+        venue.TerminatedAt = now;
+        venue.TerminationReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        return null;
+    }
+
+    /// <summary>Deshace la terminación anticipada; vuelven a aplicar las fechas del convenio.</summary>
+    public static void Reactivate(Venue venue)
+    {
+        venue.TerminatedAt = null;
+        venue.TerminationReason = null;
+    }
 
     /// <summary>Por qué el salón no puede dar este paquete por convenio, o null si sí puede.</summary>
     public static string? CannotGrantReason(Venue venue, Plan target, Plan? current, int totalPasses,
