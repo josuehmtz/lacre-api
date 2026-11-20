@@ -100,6 +100,9 @@ public class Invitation
     public DateTimeOffset? RespondedAt { get; set; }
     public string? Message { get; set; }
 
+    /// <summary>Cuándo se mandó la invitación por WhatsApp (lo marca el cliente; null = sin enviar).</summary>
+    public DateTimeOffset? SentAt { get; set; }
+
     public List<Guest> Guests { get; set; } = [];
     public List<CheckIn> CheckIns { get; set; } = [];
 }

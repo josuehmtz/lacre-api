@@ -14,7 +14,9 @@ public static class InvitationEndpoints
         RsvpStatus RsvpStatus, int ConfirmedPasses, DateTimeOffset? RespondedAt, string? Message,
         IReadOnlyList<string> GuestNames,
         // El día del evento: cuántos entraron y quiénes (las personas que la hostess marcó por nombre).
-        int CheckedIn, IReadOnlyList<string> ArrivedNames);
+        int CheckedIn, IReadOnlyList<string> ArrivedNames,
+        // Cuándo se mandó por WhatsApp (null = sin enviar).
+        DateTimeOffset? SentAt);
 
     /// <summary>El cliente registra a mano una respuesta (p. ej. le avisaron por teléfono).</summary>
     public record ManualRsvpRequest(bool Attending, int ConfirmedPasses, IReadOnlyList<string>? GuestNames);
@@ -106,6 +108,13 @@ public static class InvitationEndpoints
             return Results.Ok(ToDto(inv));
         });
 
+        // Envío por WhatsApp: el mensaje lo manda el cliente desde su WhatsApp; aquí solo se anota que ya salió
+        // (para el envío rápido y para ver quién falta). PUT marca, DELETE desmarca (si al final no se mandó).
+        group.MapPut("/{id:guid}/sent", (Guid eventId, Guid id, ClaimsPrincipal user, AppDbContext db, TimeProvider clock) =>
+            SetSentAsync(eventId, id, user, db, clock.GetUtcNow()));
+        group.MapDelete("/{id:guid}/sent", (Guid eventId, Guid id, ClaimsPrincipal user, AppDbContext db) =>
+            SetSentAsync(eventId, id, user, db, null));
+
         group.MapDelete("/{id:guid}", async (Guid eventId, Guid id, ClaimsPrincipal user, AppDbContext db) =>
         {
             var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
@@ -117,6 +126,22 @@ public static class InvitationEndpoints
         });
 
         return api;
+    }
+
+    private static async Task<IResult> SetSentAsync(Guid eventId, Guid id, ClaimsPrincipal user, AppDbContext db, DateTimeOffset? sentAt)
+    {
+        var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
+        if (ev is null) return Results.NotFound();
+        if (Editable(ev) is { } blocked) return blocked;
+
+        var inv = await db.Invitations.Include(i => i.Guests).Include(i => i.CheckIns).AsSplitQuery()
+            .FirstOrDefaultAsync(i => i.Id == id && i.EventId == eventId);
+        if (inv is null) return Results.NotFound();
+
+        // Volver a marcar conserva la primera fecha de envío.
+        inv.SentAt = sentAt is null ? null : inv.SentAt ?? sentAt;
+        await db.SaveChangesAsync();
+        return Results.Ok(ToDto(inv));
     }
 
     private static IResult? Editable(Event ev) => EventAccess.RequirePaid(ev) ?? (ev.Status == EventStatus.Archived
@@ -145,5 +170,6 @@ public static class InvitationEndpoints
     private static InvitationDto ToDto(Invitation i) =>
         new(i.Id, i.DisplayName, i.Passes, i.Phone, i.Token, i.RsvpStatus, i.ConfirmedPasses,
             i.RespondedAt, i.Message, i.Guests.OrderBy(g => g.Id).Select(g => g.Name).ToList(),
-            CheckInRules.CheckedIn(i), i.Guests.Where(g => g.CheckInId is not null).OrderBy(g => g.Id).Select(g => g.Name).ToList());
+            CheckInRules.CheckedIn(i), i.Guests.Where(g => g.CheckInId is not null).OrderBy(g => g.Id).Select(g => g.Name).ToList(),
+            i.SentAt);
 }
