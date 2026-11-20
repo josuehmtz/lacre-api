@@ -110,4 +110,31 @@ public class CheckInRulesTests
     [InlineData("", null)]
     public void TokenFromQr_extracts_token_from_invitation_link(string content, string? expected) =>
         Assert.Equal(expected, CheckInRules.TokenFromQr(content));
+
+    [Theory]
+    [InlineData(4, new[] { 1 }, 3, CheckInRules.OfflineOutcome.Applied)]
+    [InlineData(4, new int[0], 4, CheckInRules.OfflineOutcome.Applied)]
+    // Otra puerta ya registró a 3 de 4 sin conexión: las 2 que llegan aquí se guardan pero se marcan.
+    [InlineData(4, new[] { 3 }, 2, CheckInRules.OfflineOutcome.Exceeded)]
+    [InlineData(4, new[] { 4 }, 1, CheckInRules.OfflineOutcome.Exceeded)]
+    [InlineData(4, new int[0], 0, CheckInRules.OfflineOutcome.Invalid)]
+    [InlineData(4, new int[0], 5, CheckInRules.OfflineOutcome.Invalid)]
+    public void ClassifyOffline_keeps_people_who_already_entered(int passes, int[] previous, int count, CheckInRules.OfflineOutcome expected) =>
+        Assert.Equal(expected, CheckInRules.ClassifyOffline(NewInvitation(passes, RsvpStatus.Confirmed, passes, previous), count));
+
+    [Fact]
+    public void OfflineTime_keeps_reasonable_phone_time_and_clamps_the_rest()
+    {
+        var now = new DateTimeOffset(2027, 6, 12, 23, 0, 0, TimeSpan.Zero);
+        Assert.Equal(now.AddMinutes(-40), CheckInRules.OfflineTime(now.AddMinutes(-40), now));
+        Assert.Equal(now, CheckInRules.OfflineTime(now.AddHours(3), now));
+        Assert.Equal(now, CheckInRules.OfflineTime(now.AddDays(-5), now));
+    }
+
+    [Fact]
+    public void TokenHash_is_lowercase_sha256_hex()
+    {
+        // Mismo resultado que crypto.subtle.digest('SHA-256') en el navegador.
+        Assert.Equal("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", CheckInRules.TokenHash("hello"));
+    }
 }

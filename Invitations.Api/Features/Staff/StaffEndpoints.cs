@@ -31,7 +31,24 @@ public static class StaffEndpoints
     public record ScanResultDto(
         string Token, string DisplayName, int Passes, RsvpStatus RsvpStatus, int ConfirmedPasses,
         int CheckedIn, int Remaining, IReadOnlyList<int> Tables, IReadOnlyList<GuestDto> Guests,
-        IReadOnlyList<string> Warnings, IReadOnlyList<CheckInDto> CheckIns);
+        IReadOnlyList<string> Warnings, IReadOnlyList<CheckInDto> CheckIns, Guid InvitationId);
+
+    /// <summary>Lista del evento para trabajar sin conexión. El token va como huella (SHA-256), no en claro.</summary>
+    public record OfflineInvitationDto(
+        Guid Id, string TokenHash, string DisplayName, int Passes, RsvpStatus RsvpStatus, int ConfirmedPasses,
+        IReadOnlyList<GuestDto> Guests, IReadOnlyList<CheckInDto> CheckIns);
+
+    public record OfflineSnapshotDto(DateTimeOffset GeneratedAt, StaffSessionDto Session, IReadOnlyList<OfflineInvitationDto> Invitations);
+
+    /// <summary><paramref name="Id"/> lo genera el celular: reenviar la misma entrada no la duplica.</summary>
+    public record OfflineCheckIn(Guid Id, Guid InvitationId, int Count, DateTimeOffset At);
+
+    public record SyncRequest(IReadOnlyList<OfflineCheckIn> CheckIns);
+
+    /// <summary>Status: applied, exceeded (se guardó pero rebasa los pases), duplicate, notFound, invalid.</summary>
+    public record SyncItemResult(Guid Id, string Status);
+
+    public record SyncResultDto(IReadOnlyList<SyncItemResult> Results);
 
     public record ScanRequest(string Content);
 
@@ -165,6 +182,85 @@ public static class StaffEndpoints
             return Results.Ok(ToScanResult(inv));
         });
 
+        // Lista completa para el modo sin conexión: el celular la guarda y la usa si se cae la señal.
+        authed.MapGet("/snapshot", async (ClaimsPrincipal user, AppDbContext db, TimeProvider clock) =>
+        {
+            var access = await LoadAccessAsync(user, db, clock);
+            if (access is null) return Results.Unauthorized();
+
+            var invitations = await db.Invitations.AsNoTracking()
+                .Where(i => i.EventId == access.EventId)
+                .Include(i => i.Guests).ThenInclude(g => g.Table)
+                .Include(i => i.CheckIns).ThenInclude(c => c.StaffAccess)
+                .AsSplitQuery()
+                .OrderBy(i => i.DisplayName)
+                .ToListAsync();
+
+            var session = new StaffSessionDto(
+                access.Id, access.Label, access.Event.Title, access.Event.StartsAt, access.Event.VenueName,
+                invitations.Sum(i => i.ConfirmedPasses), invitations.Sum(CheckInRules.CheckedIn), access.ExpiresAt);
+
+            return Results.Ok(new OfflineSnapshotDto(clock.GetUtcNow(), session, invitations.Select(i =>
+            {
+                var scan = ToScanResult(i);
+                return new OfflineInvitationDto(i.Id, CheckInRules.TokenHash(i.Token), i.DisplayName, i.Passes,
+                    i.RsvpStatus, i.ConfirmedPasses, scan.Guests, scan.CheckIns);
+            }).ToList()));
+        });
+
+        // Sube las entradas registradas sin conexión. Idempotente: el Id de cada entrada lo generó el celular.
+        authed.MapPost("/sync", async (SyncRequest req, ClaimsPrincipal user, AppDbContext db, TimeProvider clock) =>
+        {
+            var access = await LoadAccessAsync(user, db, clock);
+            if (access is null) return Results.Unauthorized();
+            if (req.CheckIns is not { Count: > 0 and <= CheckInRules.MaxOfflineBatch })
+                return Results.Problem($"Envía entre 1 y {CheckInRules.MaxOfflineBatch} entradas.", statusCode: 400);
+
+            var now = clock.GetUtcNow();
+            var results = new List<SyncItemResult>();
+            foreach (var item in req.CheckIns.OrderBy(c => c.At))
+            {
+                // Misma protección que /checkins: la fila de la invitación queda bloqueada mientras se revisa.
+                await using var tx = await db.Database.BeginTransactionAsync();
+                var locked = await db.Invitations
+                    .FromSql($"""SELECT * FROM "Invitations" WHERE "Id" = {item.InvitationId} AND "EventId" = {access.EventId} FOR UPDATE""")
+                    .Select(i => i.Id)
+                    .FirstOrDefaultAsync();
+                if (locked == Guid.Empty)
+                {
+                    results.Add(new(item.Id, "notFound"));
+                    continue;
+                }
+                // Dentro del bloqueo: dos sincronizaciones simultáneas de la misma entrada no la duplican.
+                if (await db.CheckIns.AnyAsync(c => c.Id == item.Id))
+                {
+                    results.Add(new(item.Id, "duplicate"));
+                    continue;
+                }
+
+                var inv = await db.Invitations.Include(i => i.CheckIns).FirstAsync(i => i.Id == item.InvitationId);
+                var outcome = CheckInRules.ClassifyOffline(inv, item.Count);
+                if (outcome == CheckInRules.OfflineOutcome.Invalid)
+                {
+                    results.Add(new(item.Id, "invalid"));
+                    continue;
+                }
+
+                db.CheckIns.Add(new CheckIn
+                {
+                    Id = item.Id,
+                    InvitationId = inv.Id,
+                    Count = item.Count,
+                    At = CheckInRules.OfflineTime(item.At, now),
+                    StaffAccessId = access.Id,
+                });
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+                results.Add(new(item.Id, outcome == CheckInRules.OfflineOutcome.Exceeded ? "exceeded" : "applied"));
+            }
+            return Results.Ok(new SyncResultDto(results));
+        });
+
         // Búsqueda manual por nombre (si el invitado no trae su QR o el celular no tiene pila).
         authed.MapGet("/search", async (string? q, ClaimsPrincipal user, AppDbContext db, TimeProvider clock) =>
         {
@@ -211,6 +307,7 @@ public static class StaffEndpoints
             guests.Where(g => g.TableNumber is not null).Select(g => g.TableNumber!.Value).Distinct().Order().ToList(),
             guests,
             CheckInRules.Warnings(inv),
-            inv.CheckIns.OrderBy(c => c.At).Select(c => new CheckInDto(c.Id, c.Count, c.At, c.StaffAccess?.Label)).ToList());
+            inv.CheckIns.OrderBy(c => c.At).Select(c => new CheckInDto(c.Id, c.Count, c.At, c.StaffAccess?.Label)).ToList(),
+            inv.Id);
     }
 }

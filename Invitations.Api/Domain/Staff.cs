@@ -85,6 +85,35 @@ public static class CheckInRules
         return warnings;
     }
 
+    // --- Modo sin conexión ---
+
+    /// <summary>Entradas por sincronización: un turno de puerta completo cabe de sobra.</summary>
+    public const int MaxOfflineBatch = 200;
+    /// <summary>Una entrada sin conexión con hora más vieja que esto viene de un reloj mal puesto.</summary>
+    public static readonly TimeSpan MaxOfflineAge = TimeSpan.FromDays(2);
+
+    /// <summary>
+    /// Huella del token para la lista que se guarda en el celular de la hostess: con ella se reconoce el QR
+    /// sin conexión, pero si el celular se pierde no se pueden reconstruir los links de las invitaciones.
+    /// </summary>
+    public static string TokenHash(string token) =>
+        Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token)));
+
+    /// <summary>Hora que reporta el celular, acotada: nunca en el futuro ni de hace días.</summary>
+    public static DateTimeOffset OfflineTime(DateTimeOffset reported, DateTimeOffset now) =>
+        reported > now || reported < now - MaxOfflineAge ? now : reported;
+
+    public enum OfflineOutcome { Applied, Exceeded, Invalid }
+
+    /// <summary>
+    /// Entrada registrada sin conexión. Si rebasa los pases (otra puerta ya registró a esa invitación),
+    /// se guarda de todos modos — las personas ya entraron — y se marca para que los organizadores lo vean.
+    /// </summary>
+    public static OfflineOutcome ClassifyOffline(Invitation inv, int count) =>
+        count < 1 || count > inv.Passes ? OfflineOutcome.Invalid
+        : count > Remaining(inv) ? OfflineOutcome.Exceeded
+        : OfflineOutcome.Applied;
+
     /// <summary>Extrae el token del contenido del QR (el link /i/{token}) o acepta el token solo.</summary>
     public static string? TokenFromQr(string? content)
     {
