@@ -3,13 +3,22 @@ using System.Text;
 
 namespace Invitations.Api.Domain;
 
+/// <summary>Con quién es el convenio: un salón de eventos o un organizador (wedding planner).</summary>
+public enum PartnerKind
+{
+    Venue,
+    Planner,
+}
+
 /// <summary>
-/// Salón de eventos con convenio: mientras el convenio está vigente, su personal puede dar de alta
-/// eventos con el paquete que vendió. El cobro al salón se arregla fuera de la página.
+/// Socio con convenio (salón de eventos u organizador de eventos): mientras el convenio está vigente,
+/// su equipo puede dar de alta eventos con el paquete que vendió. El cobro se arregla fuera de la página.
+/// Las reglas son las mismas para los dos tipos; solo cambia cómo se nombra.
 /// </summary>
 public class Venue
 {
     public Guid Id { get; set; }
+    public PartnerKind Kind { get; set; } = PartnerKind.Venue;
     public string Name { get; set; } = "";
     public string? ContactName { get; set; }
     public string? Phone { get; set; }
