@@ -23,7 +23,7 @@ public static class BillingEndpoints
     /// </summary>
     public record BillingDto(EventStatus EventStatus, string? CurrentPlan, int MaxPasses, int TotalPasses,
         bool PaymentsEnabled, IReadOnlyList<PlanOptionDto> Options, IReadOnlyList<OrderDto> Orders,
-        string? ManagedBy, string? AgreementVenue);
+        string? ManagedBy, string? AgreementVenue, bool CustomLimit);
 
     public record AgreementPlanRequest(string PlanCode);
 
@@ -62,7 +62,7 @@ public static class BillingEndpoints
 
             var now = clock.GetUtcNow();
             var totalPasses = await db.Invitations.Where(i => i.EventId == eventId).SumAsync(i => i.Passes);
-            if (VenueRules.CannotGrantReason(ev.Venue, plan, ev.Plan, totalPasses, ev.Status, now) is { } reason)
+            if (VenueRules.CannotGrantReason(ev.Venue, plan, ev.Plan, totalPasses, ev.Status, now, ev.MaxPasses) is { } reason)
                 return Results.Problem(reason, statusCode: StatusCodes.Status409Conflict);
 
             db.Orders.Add(VenueRules.GrantPlan(ev, plan, ev.Venue, now));
@@ -83,7 +83,7 @@ public static class BillingEndpoints
             if (plan is null) return Results.NotFound();
 
             var totalPasses = await db.Invitations.Where(i => i.EventId == eventId).SumAsync(i => i.Passes);
-            if (PaymentRules.CannotBuyReason(plan, ev.Plan, totalPasses, ev.Status) is { } reason)
+            if (PaymentRules.CannotBuyReason(plan, ev.Plan, totalPasses, ev.Status, ev.MaxPasses) is { } reason)
                 return Results.Problem(reason, statusCode: StatusCodes.Status409Conflict);
 
             var amount = PaymentRules.AmountToPay(plan, ev.Plan);
@@ -206,7 +206,7 @@ public static class BillingEndpoints
 
         var options = plans.Select(p =>
         {
-            var reason = PaymentRules.CannotBuyReason(p, ev.Plan, totalPasses, ev.Status);
+            var reason = PaymentRules.CannotBuyReason(p, ev.Plan, totalPasses, ev.Status, ev.MaxPasses);
             return new PlanOptionDto(p.Code, p.Name, p.MaxPasses, p.PriceMxn, PaymentRules.AmountToPay(p, ev.Plan),
                 reason is null, reason);
         }).ToList();
@@ -217,6 +217,6 @@ public static class BillingEndpoints
                 : null;
 
         return new BillingDto(ev.Status, ev.Plan?.Name, ev.MaxPasses, totalPasses, gateway.IsConfigured, options, orders,
-            ev.Venue?.Name, agreementVenue);
+            ev.Venue?.Name, agreementVenue, ev.CustomLimitNote is not null);
     }
 }

@@ -182,5 +182,6 @@ api.MapBillingEndpoints();
 api.MapStaffAccessEndpoints();
 api.MapStaffEndpoints();
 api.MapVenueEndpoints();
+api.MapAdminEventEndpoints();
 
 app.Run();

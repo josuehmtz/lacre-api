@@ -118,10 +118,10 @@ public static class VenueRules
 
     /// <summary>Por qué el salón no puede dar este paquete por convenio, o null si sí puede.</summary>
     public static string? CannotGrantReason(Venue venue, Plan target, Plan? current, int totalPasses,
-        EventStatus status, DateTimeOffset now)
+        EventStatus status, DateTimeOffset now, int currentLimit = 0)
     {
         if (!AgreementActive(venue, now)) return "El convenio del salón no está vigente.";
-        return PaymentRules.CannotBuyReason(target, current, totalPasses, status);
+        return PaymentRules.CannotBuyReason(target, current, totalPasses, status, currentLimit);
     }
 
     /// <summary>Registra el paquete incluido en el convenio como una orden pagada de $0 y publica el evento.</summary>

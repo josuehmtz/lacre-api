@@ -14,9 +14,16 @@ public class TemplatesTests
     public void DefaultFor_picks_template_by_event_type(EventType type, string expected) =>
         Assert.Equal(expected, Templates.DefaultFor(type));
 
-    [Fact]
-    public void Validate_accepts_known_key_and_object() =>
-        Assert.Null(Templates.Validate("clasica", Json("""{"colors":{"primary":"#9b6b43"}}""")));
+    [Theory]
+    [InlineData("clasica")]
+    [InlineData("jardin")]
+    [InlineData("moderna")]
+    [InlineData("loteria")]
+    [InlineData("papel")]
+    [InlineData("talavera")]
+    [InlineData("deco")]
+    public void Validate_accepts_known_key_and_object(string key) =>
+        Assert.Null(Templates.Validate(key, Json("""{"colors":{"primary":"#9b6b43"}}""")));
 
     [Fact]
     public void Validate_rejects_unknown_key() =>
