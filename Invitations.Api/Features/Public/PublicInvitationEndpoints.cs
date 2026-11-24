@@ -14,7 +14,8 @@ public static class PublicInvitationEndpoints
     public record PublicEventDto(
         string Title, EventType Type, DateTimeOffset StartsAt, string? VenueName, string? VenueAddress,
         string? MapsUrl, DateTimeOffset? RsvpDeadline, string TemplateKey, JsonElement TemplateConfig,
-        string? PhotoBaseUrl);
+        string? PhotoBaseUrl, string? CeremonyName, string? CeremonyAddress, string? CeremonyMapsUrl,
+        DateTimeOffset? CeremonyStartsAt);
 
     public record PublicInvitationDto(
         string DisplayName, int Passes, RsvpStatus RsvpStatus, int ConfirmedPasses,
@@ -80,6 +81,7 @@ public static class PublicInvitationEndpoints
             IsPreview: ev.Status == EventStatus.Draft,
             new PublicEventDto(
                 ev.Title, ev.Type, ev.StartsAt, ev.VenueName, ev.VenueAddress, ev.MapsUrl,
-                ev.RsvpDeadline, template.TemplateKey, template.Config, template.PhotoBaseUrl));
+                ev.RsvpDeadline, template.TemplateKey, template.Config, template.PhotoBaseUrl,
+                ev.CeremonyName, ev.CeremonyAddress, ev.CeremonyMapsUrl, ev.CeremonyStartsAt));
     }
 }

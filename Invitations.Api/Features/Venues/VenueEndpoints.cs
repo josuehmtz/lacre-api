@@ -32,11 +32,12 @@ public static class AdminAuth
 public static class VenueEndpoints
 {
     public record MyVenueDto(Guid Id, string Name, DateOnly AgreementStartsOn, DateOnly? AgreementEndsOn,
-        AgreementStatus Status, DateTimeOffset? TerminatedAt);
+        AgreementStatus Status, DateTimeOffset? TerminatedAt, PartnerKind Kind);
 
     public record MeDto(string Email, bool IsAdmin, IReadOnlyList<MyVenueDto> Venues);
 
-    public record AccessLinkInfoDto(AccessLinkKind Kind, string Name, string? Problem);
+    /// <param name="PartnerKind">Tipo del salón u organizador detrás del link (para nombrarlo bien).</param>
+    public record AccessLinkInfoDto(AccessLinkKind Kind, string Name, string? Problem, PartnerKind? PartnerKind);
 
     public record AcceptedDto(AccessLinkKind Kind, Guid? EventId);
 
@@ -45,7 +46,7 @@ public static class VenueEndpoints
     public record VenueDto(Guid Id, string Name, string? ContactName, string? Phone, string? Notes,
         DateOnly AgreementStartsOn, DateOnly? AgreementEndsOn, AgreementStatus Status,
         DateTimeOffset? TerminatedAt, string? TerminationReason,
-        IReadOnlyList<VenueMemberDto> Members, int EventCount);
+        IReadOnlyList<VenueMemberDto> Members, int EventCount, PartnerKind Kind);
 
     public record TerminateRequest([property: StringLength(500)] string? Reason);
 
@@ -59,7 +60,8 @@ public static class VenueEndpoints
         [property: StringLength(1000)] string? Notes,
         DateOnly AgreementStartsOn,
         /// <summary>null = por tiempo indefinido.</summary>
-        DateOnly? AgreementEndsOn);
+        DateOnly? AgreementEndsOn,
+        PartnerKind Kind = PartnerKind.Venue);
 
     public record InviteLinkDto(string Token, DateTimeOffset ExpiresAt);
 
@@ -77,7 +79,7 @@ public static class VenueEndpoints
                 .OrderBy(v => v.Name).ToListAsync();
             return Results.Ok(new MeDto(email, AdminAuth.IsAdmin(user, config),
                 venues.Select(v => new MyVenueDto(v.Id, v.Name, v.AgreementStartsOn, v.AgreementEndsOn,
-                    VenueRules.Status(v, now), v.TerminatedAt)).ToList()));
+                    VenueRules.Status(v, now), v.TerminatedAt, v.Kind)).ToList()));
         }).WithTags("Me").RequireAuthorization();
 
         MapAccessLinks(api);
@@ -95,7 +97,11 @@ public static class VenueEndpoints
             var link = await FindAsync(db, token);
             if (link is null) return Results.NotFound();
             var name = link.Kind == AccessLinkKind.EventOwner ? link.Event!.Title : link.Venue!.Name;
-            return Results.Ok(new AccessLinkInfoDto(link.Kind, name, AccessLinks.UnusableReason(link, clock.GetUtcNow())));
+            var partnerId = link.Kind == AccessLinkKind.EventOwner ? link.Event!.VenueId : link.VenueId;
+            PartnerKind? partnerKind = partnerId is { } pid
+                ? await db.Venues.Where(v => v.Id == pid).Select(v => v.Kind).FirstOrDefaultAsync()
+                : null;
+            return Results.Ok(new AccessLinkInfoDto(link.Kind, name, AccessLinks.UnusableReason(link, clock.GetUtcNow()), partnerKind));
         });
 
         links.MapPost("/accept", async (string token, ClaimsPrincipal user, AppDbContext db, TimeProvider clock) =>
@@ -241,6 +247,7 @@ public static class VenueEndpoints
 
     private static void Apply(Venue venue, SaveVenueRequest req)
     {
+        venue.Kind = req.Kind;
         venue.Name = req.Name.Trim();
         venue.ContactName = Clean(req.ContactName);
         venue.Phone = Clean(req.Phone);
@@ -255,5 +262,5 @@ public static class VenueEndpoints
         v.Id, v.Name, v.ContactName, v.Phone, v.Notes, v.AgreementStartsOn, v.AgreementEndsOn,
         VenueRules.Status(v, now), v.TerminatedAt, v.TerminationReason,
         v.Members.OrderBy(m => m.AddedAt).Select(m => new VenueMemberDto(m.UserId, m.User?.Email ?? "", m.AddedAt)).ToList(),
-        eventCount);
+        eventCount, v.Kind);
 }

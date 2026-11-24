@@ -41,6 +41,15 @@ public class Event
     public string? VenueAddress { get; set; }
     public string? MapsUrl { get; set; }
 
+    /// <summary>
+    /// Ceremonia (iglesia, juzgado, jardín…) cuando es en otro lugar que la recepción.
+    /// Todo opcional; sin nombre ni dirección la invitación muestra solo el lugar de la recepción.
+    /// </summary>
+    public string? CeremonyName { get; set; }
+    public string? CeremonyAddress { get; set; }
+    public string? CeremonyMapsUrl { get; set; }
+    public DateTimeOffset? CeremonyStartsAt { get; set; }
+
     public DateTimeOffset? RsvpDeadline { get; set; }
 
     /// <summary>Clave de la plantilla de React (p. ej. "boda-clasica").</summary>

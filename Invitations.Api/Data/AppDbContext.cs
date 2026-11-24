@@ -63,6 +63,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         b.Entity<Venue>(e =>
         {
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.ContactName).HasMaxLength(200);
             e.Property(x => x.Phone).HasMaxLength(20);

@@ -21,7 +21,9 @@ public static class EventEndpoints
         Guid Id, string Title, EventType Type, EventStatus Status, DateTimeOffset StartsAt,
         string? VenueName, string? VenueAddress, string? MapsUrl, DateTimeOffset? RsvpDeadline,
         int InvitationCount, int TotalPasses, int PassLimit, RsvpSummaryDto Rsvp,
-        string? ManagedBy, bool IsVenueStaff, bool HasClient, string? ClientEmail);
+        string? ManagedBy, bool IsVenueStaff, bool HasClient, string? ClientEmail,
+        string? CeremonyName, string? CeremonyAddress, string? CeremonyMapsUrl, DateTimeOffset? CeremonyStartsAt,
+        PartnerKind? ManagedByKind);
 
     /// <summary>Evento que da de alta el salón con el paquete que vendió.</summary>
     public record CreateVenueEventRequest(
@@ -41,7 +43,11 @@ public static class EventEndpoints
         [property: StringLength(200)] string? VenueName,
         [property: StringLength(300)] string? VenueAddress,
         [property: Url, StringLength(500)] string? MapsUrl,
-        DateTimeOffset? RsvpDeadline);
+        DateTimeOffset? RsvpDeadline,
+        [property: StringLength(200)] string? CeremonyName = null,
+        [property: StringLength(300)] string? CeremonyAddress = null,
+        [property: Url, StringLength(500)] string? CeremonyMapsUrl = null,
+        DateTimeOffset? CeremonyStartsAt = null);
 
     public static IEndpointRouteBuilder MapEventEndpoints(this IEndpointRouteBuilder api)
     {
@@ -100,7 +106,8 @@ public static class EventEndpoints
 
             var ev = new Event { Id = Guid.CreateVersion7(), VenueId = venue.Id };
             Apply(ev, req.Event);
-            ev.VenueName ??= venue.Name;
+            // Un salón es el lugar de la recepción; un organizador no.
+            if (venue.Kind == PartnerKind.Venue) ev.VenueName ??= venue.Name;
             db.Events.Add(ev);
             db.Orders.Add(VenueRules.GrantPlan(ev, plan, venue, now));
             await db.SaveChangesAsync();
@@ -160,6 +167,12 @@ public static class EventEndpoints
 
     private static IResult? Validate(SaveEventRequest req)
     {
+        // La ceremonia suele ser antes de la recepción, pero el mismo día o la víspera (boda civil).
+        if (req.CeremonyStartsAt is { } ceremony && (ceremony - req.StartsAt).Duration() > TimeSpan.FromDays(2))
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["ceremonyStartsAt"] = ["La hora de la ceremonia debe ser cerca de la fecha del evento."],
+            });
         if (req.RsvpDeadline is { } deadline && deadline > req.StartsAt)
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
@@ -178,6 +191,10 @@ public static class EventEndpoints
         ev.VenueAddress = Clean(req.VenueAddress);
         ev.MapsUrl = Clean(req.MapsUrl);
         ev.RsvpDeadline = req.RsvpDeadline?.ToUniversalTime();
+        ev.CeremonyName = Clean(req.CeremonyName);
+        ev.CeremonyAddress = Clean(req.CeremonyAddress);
+        ev.CeremonyMapsUrl = Clean(req.CeremonyMapsUrl);
+        ev.CeremonyStartsAt = req.CeremonyStartsAt?.ToUniversalTime();
     }
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
@@ -196,18 +213,21 @@ public static class EventEndpoints
             PendingPasses: byStatus.Where(x => x.Status == RsvpStatus.Pending).Sum(x => x.Passes),
             CheckedIn: await db.CheckIns.Where(c => c.Invitation.EventId == ev.Id).SumAsync(c => c.Count));
 
+        var partner = ev.VenueId is { } venueId
+            ? await db.Venues.Where(v => v.Id == venueId).Select(v => new { v.Name, v.Kind }).FirstAsync()
+            : null;
+
         return new EventDetailDto(
             ev.Id, ev.Title, ev.Type, ev.Status, ev.StartsAt, ev.VenueName, ev.VenueAddress,
             ev.MapsUrl, ev.RsvpDeadline, byStatus.Sum(x => x.Count), byStatus.Sum(x => x.Passes),
             await db.PassLimitAsync(ev), rsvp,
-            ManagedBy: ev.VenueId is { } venueId
-                ? await db.Venues.Where(v => v.Id == venueId).Select(v => v.Name).FirstAsync()
-                : null,
+            ManagedBy: partner?.Name,
             IsVenueStaff: await db.ManagesAsync(ev, userId),
             HasClient: ev.OwnerId is not null,
             // El salón ve qué cuenta quedó vinculada como cliente.
             ClientEmail: ev.OwnerId is { } ownerId && ev.VenueId is not null
                 ? await db.Users.Where(u => u.Id == ownerId).Select(u => u.Email).FirstOrDefaultAsync()
-                : null);
+                : null,
+            ev.CeremonyName, ev.CeremonyAddress, ev.CeremonyMapsUrl, ev.CeremonyStartsAt, partner?.Kind);
     }
 }

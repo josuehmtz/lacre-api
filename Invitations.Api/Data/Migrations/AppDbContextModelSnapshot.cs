@@ -173,6 +173,18 @@ namespace Invitations.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CeremonyAddress")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CeremonyMapsUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CeremonyName")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("CeremonyStartsAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -539,6 +551,11 @@ namespace Invitations.Api.Data.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Name")
                         .IsRequired()
