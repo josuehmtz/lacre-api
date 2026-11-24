@@ -54,6 +54,11 @@ public class Event
     public Plan? Plan { get; set; }
     /// <summary>Límite de pases según el paquete pagado (0 mientras es borrador).</summary>
     public int MaxPasses { get; set; }
+    /// <summary>
+    /// Paquete a la medida (más invitados que el paquete más grande): lo pone un administrador con lo acordado
+    /// y pagado fuera de la app, p. ej. "800 invitados · $3,500 por transferencia". Null si no aplica.
+    /// </summary>
+    public string? CustomLimitNote { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

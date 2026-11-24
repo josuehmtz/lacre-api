@@ -8,7 +8,7 @@ namespace Invitations.Api.Domain;
 /// </summary>
 public static class Templates
 {
-    public static readonly IReadOnlySet<string> Keys = new HashSet<string> { "clasica", "jardin", "moderna" };
+    public static readonly IReadOnlySet<string> Keys = new HashSet<string> { "clasica", "jardin", "moderna", "loteria", "papel", "talavera", "deco" };
 
     /// <summary>Tamaño máximo de la configuración (textos, colores, secciones). Evita abusos del jsonb.</summary>
     public const int MaxConfigBytes = 32 * 1024;

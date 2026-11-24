@@ -27,8 +27,8 @@ public static class QueryExtensions
 public static class EventAccess
 {
     /// <summary>
-    /// Todo lo del evento (diseño, invitados, mesas, hostess) se desbloquea hasta que el paquete está pagado
-    /// (o lo incluyó el convenio de un salón).
+    /// Invitados, mesas y hostess se desbloquean hasta que el paquete está pagado (o lo incluyó el convenio
+    /// de un salón). El diseño de la invitación (plantilla y fotos) es gratis y no pasa por aquí.
     /// </summary>
     public static IResult? RequirePaid(Event ev) => ev.Status == EventStatus.Draft
         ? Results.Problem("Completa el pago de tu paquete para usar esta sección.",

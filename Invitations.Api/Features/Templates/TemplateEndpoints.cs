@@ -25,7 +25,8 @@ public static class TemplateEndpoints
         {
             var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
-            return EventAccess.RequirePaid(ev) ?? Results.Ok(ToDto(ev, photos.PublicBaseUrl));
+            // El diseño es gratis: se puede elegir y personalizar la plantilla antes de pagar.
+            return Results.Ok(ToDto(ev, photos.PublicBaseUrl));
         });
 
         group.MapPut("/", async (Guid eventId, SaveTemplateRequest req, ClaimsPrincipal user, AppDbContext db,
@@ -33,7 +34,6 @@ public static class TemplateEndpoints
         {
             var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId);
             if (ev is null) return Results.NotFound();
-            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
             if (ev.Status == EventStatus.Archived)
                 return Results.Problem("El evento está archivado y ya no se puede editar.", statusCode: 409);
 

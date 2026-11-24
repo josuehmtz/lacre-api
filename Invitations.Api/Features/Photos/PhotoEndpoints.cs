@@ -26,7 +26,8 @@ public static class PhotoEndpoints
 
             var ev = await db.Events.AccessibleBy(user.GetUserId()).FirstOrDefaultAsync(e => e.Id == eventId, ct);
             if (ev is null) return Results.NotFound();
-            if (EventAccess.RequirePaid(ev) is { } unpaid) return unpaid;
+            // Subir fotos es parte del diseño, que es gratis; el tope de fotos por evento y el máximo de un
+            // evento sin pagar por cliente limitan lo que se puede guardar en R2.
             if (ev.Status == EventStatus.Archived)
                 return Results.Problem("El evento está archivado y ya no se puede editar.", statusCode: 409);
 

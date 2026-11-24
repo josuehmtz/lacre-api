@@ -176,6 +176,9 @@ namespace Invitations.Api.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CustomLimitNote")
+                        .HasColumnType("text");
+
                     b.Property<string>("LayoutConfig")
                         .IsRequired()
                         .HasColumnType("jsonb");

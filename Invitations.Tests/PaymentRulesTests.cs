@@ -26,6 +26,33 @@ public class PaymentRulesTests
     }
 
     [Fact]
+    public void Custom_limit_publishes_and_sets_passes()
+    {
+        var ev = new Event { Status = EventStatus.Draft };
+        Assert.Null(PaymentRules.ApplyCustomLimit(ev, 800, 0, "800 invitados · $3,500 transferencia"));
+        Assert.Equal(800, ev.MaxPasses);
+        Assert.Equal(EventStatus.Published, ev.Status);
+        Assert.Equal("800 invitados · $3,500 transferencia", ev.CustomLimitNote);
+    }
+
+    [Fact]
+    public void Custom_limit_rejects_bad_input()
+    {
+        Assert.NotNull(PaymentRules.ApplyCustomLimit(new Event(), 800, 0, " "));
+        Assert.NotNull(PaymentRules.ApplyCustomLimit(new Event(), 0, 0, "nota"));
+        Assert.NotNull(PaymentRules.ApplyCustomLimit(new Event(), PaymentRules.MaxCustomPasses + 1, 0, "nota"));
+        Assert.Contains("620", PaymentRules.ApplyCustomLimit(new Event(), 600, 620, "nota"));
+        Assert.NotNull(PaymentRules.ApplyCustomLimit(new Event { Status = EventStatus.Archived }, 800, 0, "nota"));
+    }
+
+    [Fact]
+    public void Custom_limit_blocks_selling_smaller_plans_but_draft_is_unaffected()
+    {
+        Assert.Contains("a la medida", PaymentRules.CannotBuyReason(Premium, null, 10, EventStatus.Published, currentLimit: 800));
+        Assert.Null(PaymentRules.CannotBuyReason(Premium, null, 10, EventStatus.Draft, currentLimit: 0));
+    }
+
+    [Fact]
     public void Archived_event_cannot_buy() =>
         Assert.NotNull(PaymentRules.CannotBuyReason(Premium, null, 0, EventStatus.Archived));
 
